@@ -12,7 +12,7 @@ msg "Building LLVM..."
 ./build-llvm.py \
 	--clang-vendor "Wraith" \
 	--targets "ARM;AArch64" \
-  --shallow-clone \
+	--shallow-clone \
 	--pgo kernel-defconfig \
 	--lto thin
 

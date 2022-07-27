@@ -10,11 +10,9 @@ function msg() {
 # Build LLVM
 msg "Building LLVM..."
 ./build-llvm.py \
-	--clang-vendor "Wraith" \
+	--clang-vendor "Nerdllvm" \
 	--targets "ARM;AArch64" \
-	--shallow-clone \
-	--pgo kernel-defconfig \
-	--lto thin
+	--shallow-clone
 
 # Build binutils
 msg "Building binutils..."

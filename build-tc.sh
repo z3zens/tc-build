@@ -10,13 +10,15 @@ function msg() {
 # Build LLVM
 msg "Building LLVM..."
 ./build-llvm.py \
-	--clang-vendor "Nerdllvm" \
-	--targets "ARM;AArch64" \
-	--shallow-clone
+	--clang-vendor "NerdLLVM" \
+	--projects "clang;compiler-rt;polly" \
+	--pgo \
+	--no-update \
+	--targets "ARM;AArch64;X86"
 
 # Build binutils
 msg "Building binutils..."
-./build-binutils.py --targets arm aarch64
+./build-binutils.py --targets arm aarch64 x86_64
 
 # Remove unused products
 msg "Removing unused products..."

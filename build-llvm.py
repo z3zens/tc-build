@@ -17,7 +17,7 @@ import urllib.request as request
 from urllib.error import URLError
 
 # This is a known good revision of LLVM for building the kernel
-GOOD_REVISION = '559b8fc17ef6f5a65ccf9a11fce5f91c0a011b00'
+GOOD_REVISION = '5351878ba1963a84600df3a9e907b458b0529851'
 
 
 class Directories:
@@ -534,7 +534,8 @@ def check_cc_ld_variables(root_folder):
             ld = shutil.which(ld)
         if linker_test(cc, ld):
             print("LD won't work with " + cc +
-                  ", saving you from yourself by ignoring LD value")
+                  ", saving you from yourself by ignoring LD value",
+                  flush=True)
             ld = None
     # If the user didn't specify a linker
     else:
@@ -569,6 +570,7 @@ def check_cc_ld_variables(root_folder):
         if ld_to_print is None:
             ld_to_print = shutil.which(ld)
         print("LD: " + ld_to_print)
+    utils.flush_std_err_out()
 
     return cc, cxx, ld
 
@@ -584,7 +586,7 @@ def check_dependencies():
         if output is None:
             raise RuntimeError(command +
                                " could not be found, please install it!")
-        print(output)
+        print(output, flush=True)
 
 
 def repo_is_shallow(repo):
@@ -1119,7 +1121,8 @@ def show_command(args, command):
     :param command: The command being run
     """
     if args.show_build_commands:
-        print("$ %s" % " ".join([str(element) for element in command]))
+        print("$ %s" % " ".join([str(element) for element in command]),
+              flush=True)
 
 
 def get_pgo_header_folder(stage):
@@ -1185,6 +1188,7 @@ def print_install_info(install_folder):
             if binary.exists():
                 subprocess.run([binary, "--version"], check=True)
                 print()
+    utils.flush_std_err_out()
 
 
 def ninja_check(args, build_folder):
@@ -1233,6 +1237,7 @@ def invoke_ninja(args, dirs, stage):
     print()
     print("LLVM build duration: " +
           str(datetime.timedelta(seconds=int(time.time() - time_started))))
+    utils.flush_std_err_out()
 
     if should_install_toolchain(args, stage):
         subprocess.run(['ninja', 'install'],
@@ -1487,7 +1492,8 @@ def do_bolt(args, dirs):
                                                     "w") as err_f:
             # We don't use show_command() here because of how long the command
             # will be.
-            print("Merging .fdata files, this might take a while...")
+            print("Merging .fdata files, this might take a while...",
+                  flush=True)
             subprocess.run([merge_fdata] + fdata_files,
                            stdout=out_f,
                            stderr=err_f,
@@ -1528,10 +1534,45 @@ def do_bolt(args, dirs):
         clang_inst.unlink()
 
 
+# https://github.com/llvm/llvm-project/commit/4f158995b9cddae392bfb5989af8c83101ae0789
+def has_4f158995b9cddae(llvm_folder):
+    return llvm_folder.joinpath("bolt", "lib", "Passes",
+                                "ValidateMemRefs.cpp").exists()
+
+
 def main():
     root_folder = pathlib.Path(__file__).resolve().parent
 
     args = parse_parameters(root_folder)
+
+    build_folder = pathlib.Path(args.build_folder)
+    if not build_folder.is_absolute():
+        build_folder = root_folder.joinpath(build_folder)
+
+    install_folder = pathlib.Path(args.install_folder)
+    if not install_folder.is_absolute():
+        install_folder = root_folder.joinpath(install_folder)
+
+    linux_folder = None
+    if args.linux_folder:
+        linux_folder = pathlib.Path(args.linux_folder)
+        if not linux_folder.is_absolute():
+            linux_folder = root_folder.joinpath(linux_folder)
+        if not linux_folder.exists():
+            utils.print_error("\nSupplied kernel source (%s) does not exist!" %
+                              linux_folder.as_posix())
+            exit(1)
+
+    if args.llvm_folder:
+        llvm_folder = pathlib.Path(args.llvm_folder)
+        if not llvm_folder.is_absolute():
+            llvm_folder = root_folder.joinpath(llvm_folder)
+        if not llvm_folder.exists():
+            utils.print_error("\nSupplied LLVM source (%s) does not exist!" %
+                              llvm_folder.as_posix())
+            exit(1)
+    else:
+        llvm_folder = root_folder.joinpath("llvm-project")
 
     # There are a couple of known issues with BOLT in instrumentation mode:
     # https://github.com/llvm/llvm-project/issues/55004
@@ -1540,7 +1581,8 @@ def main():
     if args.bolt and not can_use_perf():
         warn = False
 
-        if args.pgo and not args.assertions:
+        if args.pgo and not args.assertions and not has_4f158995b9cddae(
+                llvm_folder):
             utils.print_warning(
                 "\nUsing BOLT in instrumentation mode with PGO and no assertions might result in a binary that crashes:"
             )
@@ -1567,24 +1609,6 @@ def main():
                 "Continuing in 5 seconds, hit Ctrl-C to cancel...")
             time.sleep(5)
 
-    build_folder = pathlib.Path(args.build_folder)
-    if not build_folder.is_absolute():
-        build_folder = root_folder.joinpath(build_folder)
-
-    install_folder = pathlib.Path(args.install_folder)
-    if not install_folder.is_absolute():
-        install_folder = root_folder.joinpath(install_folder)
-
-    linux_folder = None
-    if args.linux_folder:
-        linux_folder = pathlib.Path(args.linux_folder)
-        if not linux_folder.is_absolute():
-            linux_folder = root_folder.joinpath(linux_folder)
-        if not linux_folder.exists():
-            utils.print_error("\nSupplied kernel source (%s) does not exist!" %
-                              linux_folder.as_posix())
-            exit(1)
-
     env_vars = EnvVars(*check_cc_ld_variables(root_folder))
     check_dependencies()
     if args.use_good_revision:
@@ -1592,16 +1616,7 @@ def main():
     else:
         ref = args.branch
 
-    if args.llvm_folder:
-        llvm_folder = pathlib.Path(args.llvm_folder)
-        if not llvm_folder.is_absolute():
-            llvm_folder = root_folder.joinpath(llvm_folder)
-        if not llvm_folder.exists():
-            utils.print_error("\nSupplied LLVM source (%s) does not exist!" %
-                              linux_folder.as_posix())
-            exit(1)
-    else:
-        llvm_folder = root_folder.joinpath("llvm-project")
+    if not args.llvm_folder:
         fetch_llvm_binutils(root_folder, llvm_folder, not args.no_update,
                             args.shallow_clone, ref)
     cleanup(build_folder, args.incremental)

@@ -25,7 +25,8 @@ msg "Building LLVM..."
 	--clang-vendor "Wurtzite" \
 	--projects "clang;compiler-rt;polly" \
 	--no-update \
-	--targets "ARM;AArch64;X86"
+	--targets "ARM;AArch64;X86" \
+        --lto thin
 
 # Build binutils
 msg "Building binutils..."
@@ -65,19 +66,20 @@ clang_version="$(install/bin/clang --version | head -n1 | cut -d' ' -f4)"
 
 # Push to GitHub
 # Update Git repository
-git config --global user.name z3zens
+git config --global user.name "z3zens"
 git config --global user.email "ramaadhananggay@gmail.com"
 git clone "https://z3zens:$GL_TOKEN@gitlab.com/z3zens/wurtzite-toolchains.git" rel_repo
 pushd rel_repo || exit
 rm -fr ./*
 cp -r ../install/* .
 git checkout README.md # keep this as it's not part of the toolchain itself
+git checkout LICENSE
 git add .
 git commit -asm "[$rel_date]: Wurtzite LLVM Clang 16.0.0
 
 LLVM commit: $llvm_commit_url
 Clang Version: $clang_version
 Binutils version: $binutils_ver
-Builder at commit: https://tc-build/commit/$builder_commit"
+Builder at commit: https://github.com/z3zens/tc-build/commit/$builder_commit"
 git push -f
 popd || exit

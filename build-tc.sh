@@ -67,7 +67,7 @@ clang_version="$(install/bin/clang --version | head -n1 | cut -d' ' -f4)"
 # Update Git repository
 git config --global user.name z3zens
 git config --global user.email "ramaadhananggay@gmail.com"
-git clone "https://z3zens:$GL_TOKEN@wurtzite-toolchains" rel_repo
+git clone "https://z3zens:$GL_TOKEN@gitlab.com/z3zens/wurtzite-toolchains.git" rel_repo
 pushd rel_repo || exit
 rm -fr ./*
 cp -r ../install/* .

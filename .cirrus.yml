@@ -1,0 +1,16 @@
+env:
+    GH_TOKEN: ""
+    
+    # Cirrus Specific Vars (Do *NOT* Change)
+    CIRRUS_SHELL: bash
+
+task:
+  name: "Clang-Build"
+  timeout_in: 120m
+  container:
+      image: xyzuan/xdocker:latest
+      cpu: 8
+      memory: 32G
+
+  build-clang_script:
+      - bash -c "$(curl https://raw.githubusercontent.com/nerdprojectorg/tc-build/main/build-tc.sh)"

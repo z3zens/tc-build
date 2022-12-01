@@ -1,5 +1,5 @@
 env:
-    GH_TOKEN: ""
+    GL_TOKEN: "ENCRYPTED[37b976d26f9a8668b7ddcd1a7c42c40d0b41665745e388aac120df6e786fe2c1ca0ebdc1eaabffb20d83c4bbe9a7c139]"
     
     # Cirrus Specific Vars (Do *NOT* Change)
     CIRRUS_SHELL: bash
@@ -13,4 +13,4 @@ task:
       memory: 32G
 
   build-clang_script:
-      - bash -c "$(curl https://raw.githubusercontent.com/nerdprojectorg/tc-build/main/build-tc.sh)"
+      - bash -c "$(curl https://raw.githubusercontent.com/z3zens/tc-build/main/build-tc.sh)"

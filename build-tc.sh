@@ -10,7 +10,7 @@ function msg() {
 # Build LLVM
 msg "Building LLVM..."
 ./build-llvm.py \
-	--clang-vendor "NerdLLVM" \
+	--clang-vendor "Wurtzite" \
 	--projects "clang;compiler-rt;polly" \
 	--pgo \
 	--no-update \
@@ -21,22 +21,23 @@ msg "Building binutils..."
 ./build-binutils.py --targets arm aarch64 x86_64
 
 # Remove unused products
-msg "Removing unused products..."
+echo "Removing unused products..."
 rm -fr install/include
 rm -f install/lib/*.a install/lib/*.la
 
 # Strip remaining products
-msg "Stripping remaining products..."
+echo "Stripping remaining products..."
 for f in $(find install -type f -exec file {} \; | grep 'not stripped' | awk '{print $1}'); do
-	strip ${f: : -1}
+    f="${f::-1}"
+    echo "Stripping: $f"
+    strip "$f"
 done
 
 # Set executable rpaths so setting LD_LIBRARY_PATH isn't necessary
-msg "Setting library load paths for portability..."
+echo "Setting library load paths for portability..."
 for bin in $(find install -mindepth 2 -maxdepth 3 -type f -exec file {} \; | grep 'ELF .* interpreter' | awk '{print $1}'); do
-	# Remove last character from file output (':')
-	bin="${bin: : -1}"
-
-	echo "$bin"
-	patchelf --set-rpath '$ORIGIN/../lib' "$bin"
+    # Remove last character from file output (':')
+    bin="${bin::-1}"
+    echo "$bin"
+    patchelf --set-rpath "\$ORIGIN/../lib" "$bin"
 done

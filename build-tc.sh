@@ -25,8 +25,7 @@ msg "Building LLVM..."
 	--clang-vendor "Wurtzite" \
 	--projects "clang;compiler-rt;polly" \
 	--no-update \
-	--targets "ARM;AArch64;X86" \
-        --lto thin
+	--targets "ARM;AArch64;X86"
 
 # Build binutils
 msg "Building binutils..."

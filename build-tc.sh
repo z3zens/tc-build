@@ -74,7 +74,7 @@ cd $DIR
 pushd rel_repo || exit
 rm -fr ./*
 cp -r ../install/* .
-git checkout README.md && git checkout LICENSE# keep this as it's not part of the toolchain itself
+git checkout README.md && git checkout LICENSE # keep this as it's not part of the toolchain itself
 git add .
 git commit -asm "[$rel_date]: WurtZite LLVM Clang $clang_version
 

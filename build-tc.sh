@@ -22,7 +22,7 @@ builder_commit="$(git rev-parse HEAD)"
 # Build LLVM
 msg "Building LLVM..."
 ./build-llvm.py \
-	--clang-vendor "Wurtzite" \
+	--clang-vendor "WurtZite" \
 	--projects "clang;compiler-rt;polly" \
 	--no-update \
 	--targets "ARM;AArch64;X86"
@@ -54,6 +54,7 @@ for bin in $(find install -mindepth 2 -maxdepth 3 -type f -exec file {} \; | gre
 done
 
 # Release Info
+echo "Release info..."
 pushd llvm-project || exit
 llvm_commit="$(git rev-parse HEAD)"
 short_llvm_commit="$(cut -c-8 <<< "$llvm_commit")"
@@ -63,18 +64,19 @@ llvm_commit_url="https://github.com/llvm/llvm-project/commit/$short_llvm_commit"
 binutils_ver="$(ls | grep "^binutils-" | sed "s/binutils-//g")"
 clang_version="$(install/bin/clang --version | head -n1 | cut -d' ' -f4)"
 
-# Push to GitHub
-# Update Git repository
+# Push to GitLab
+echo "Push to gitlab..."
 git config --global user.name "z3zens"
 git config --global user.email "ramaadhananggay@gmail.com"
 git clone "https://z3zens:$GL_TOKEN@gitlab.com/z3zens/wurtzite-toolchains.git" rel_repo
+cd rel_repo && git reset 5bd62b36737fa306d21b1771676275d0c3f628eb --hard
+cd $DIR
 pushd rel_repo || exit
 rm -fr ./*
 cp -r ../install/* .
-git checkout README.md # keep this as it's not part of the toolchain itself
-git checkout LICENSE
+git checkout README.md && git checkout LICENSE# keep this as it's not part of the toolchain itself
 git add .
-git commit -asm "[$rel_date]: Wurtzite LLVM Clang 16.0.0
+git commit -asm "[$rel_date]: WurtZite LLVM Clang $clang_version
 
 LLVM commit: $llvm_commit_url
 Clang Version: $clang_version

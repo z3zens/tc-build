@@ -22,7 +22,7 @@ builder_commit="$(git rev-parse HEAD)"
 # Build LLVM
 msg "Building LLVM..."
 ./build-llvm.py \
-	--clang-vendor "WurtZite" \
+	--clang-vendor "z3zhain" \
 	--projects "clang;compiler-rt;polly" \
 	--no-update \
 	--targets "ARM;AArch64;X86"
@@ -76,7 +76,7 @@ rm -fr ./*
 cp -r ../install/* .
 git checkout README.md && git checkout LICENSE # keep this as it's not part of the toolchain itself
 git add .
-git commit -asm "[$rel_date]: WurtZite LLVM Clang $clang_version
+git commit -asm "[$rel_date]: z3zhain LLVM Clang $clang_version
 
 LLVM commit: $llvm_commit_url
 Clang Version: $clang_version

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pylint: disable=invalid-name
 # Description: Builds an LLVM toolchain suitable for kernel development
 
 import argparse
@@ -9,12 +10,14 @@ import platform
 import os
 import subprocess
 import shutil
+import sys
 import textwrap
 import time
-import utils
 import re
-import urllib.request as request
+from urllib import request
 from urllib.error import URLError
+
+import utils
 
 # This is a known good revision of LLVM for building the kernel
 GOOD_REVISION = '5351878ba1963a84600df3a9e907b458b0529851'
@@ -379,6 +382,13 @@ def parse_parameters(root_folder):
                                  'kernel-allmodconfig-slim',
                                  'kernel-allyesconfig-slim', 'llvm'
                              ])
+    parser.add_argument("--quiet-cmake",
+                        help=textwrap.dedent("""\
+                        By default, the script shows all output from cmake. When this option is enabled, the
+                        invocations of cmake will only show warnings and errors.
+
+                        """),
+                        action="store_true")
     clone_options.add_argument("-s",
                                "--shallow-clone",
                                help=textwrap.dedent("""\
@@ -444,12 +454,18 @@ def linker_test(cc, ld):
     :param ld: A linker to test -fuse=ld against
     :return: 0 if the linker supports -fuse=ld, 1 otherwise
     """
-    echo = subprocess.Popen(['echo', 'int main() { return 0; }'],
-                            stdout=subprocess.PIPE)
-    return subprocess.run(
-        [cc, f'-fuse-ld={ld}', '-o', '/dev/null', '-x', 'c', '-'],
-        stdin=echo.stdout,
-        stderr=subprocess.DEVNULL).returncode
+    cc_cmd = [cc, f'-fuse-ld={ld}', '-o', '/dev/null', '-x', 'c', '-']
+
+    try:
+        subprocess.run(cc_cmd,
+                       capture_output=True,
+                       check=True,
+                       input='int main() { return 0; }',
+                       text=True)
+    except subprocess.CalledProcessError:
+        return False
+
+    return True
 
 
 def versioned_binaries(binary_name):
@@ -459,20 +475,18 @@ def versioned_binaries(binary_name):
     :return: List of versioned binaries
     """
 
-    # There might be clang-7 to clang-11
-    tot_llvm_ver = 11
+    # There might be clang-7 to clang-16
+    tot_llvm_ver = 16
     try:
-        response = request.urlopen(
-            'https://raw.githubusercontent.com/llvm/llvm-project/main/llvm/CMakeLists.txt'
-        )
-        to_parse = None
-        data = response.readlines()
+        cmakelists_url = 'https://raw.githubusercontent.com/llvm/llvm-project/main/llvm/CMakeLists.txt'
+        with request.urlopen(cmakelists_url) as response:
+            data = response.readlines()
+
         for line in data:
             line = line.decode('utf-8').strip()
             if "set(LLVM_VERSION_MAJOR" in line:
-                to_parse = line
+                tot_llvm_ver = re.search(r'\d+', line).group(0)
                 break
-        tot_llvm_ver = re.search('\d+', to_parse).group(0)
     except URLError:
         pass
     return [f'{binary_name}-{i}' for i in range(int(tot_llvm_ver), 6, -1)]
@@ -603,16 +617,19 @@ def ref_exists(repo, ref):
     :param ref: The ref to check
     :return: True if ref exits, False if not
     """
-    return subprocess.run(["git", "show-branch", ref],
-                          stderr=subprocess.STDOUT,
-                          stdout=subprocess.DEVNULL,
-                          cwd=repo).returncode == 0
+    try:
+        subprocess.run(["git", "show-branch", ref],
+                       capture_output=True,
+                       check=True,
+                       cwd=repo)
+    except subprocess.CalledProcessError:
+        return False
+    return True
 
 
-def fetch_llvm_binutils(root_folder, llvm_folder, update, shallow, ref):
+def fetch_llvm(llvm_folder, update, shallow, ref):
     """
-    Download llvm and binutils or update them if they exist
-    :param root_folder: Working directory
+    Download llvm if it does not exist, update it if it does
     :param llvm_folder: llvm-project repo directory
     :param update: Boolean indicating whether sources need to be updated or not
     :param ref: The ref to checkout the monorepo to
@@ -642,7 +659,7 @@ def fetch_llvm_binutils(root_folder, llvm_folder, update, shallow, ref):
                 utils.print_error(
                     f"\t3. Delete '{llvm_folder}' and re-run the script with '-s' + '-b <ref>' to get a full set of refs."
                 )
-                exit(1)
+                sys.exit(1)
 
             # Do the update
             subprocess.run(["git", "checkout", ref],
@@ -659,12 +676,11 @@ def fetch_llvm_binutils(root_folder, llvm_folder, update, shallow, ref):
                 pass
             if local_ref and local_ref.startswith("refs/heads/"):
                 # This is a branch, pull from remote
-                subprocess.run([
+                git_pull_cmd = [
                     "git", "pull", "--rebase", "origin",
                     local_ref.strip().replace("refs/heads/", "")
-                ],
-                               check=True,
-                               cwd=llvm_folder)
+                ]
+                subprocess.run(git_pull_cmd, check=True, cwd=llvm_folder)
     else:
         utils.print_header("Downloading LLVM")
 
@@ -673,18 +689,12 @@ def fetch_llvm_binutils(root_folder, llvm_folder, update, shallow, ref):
             extra_args = ("--depth", "1")
             if ref != "main":
                 extra_args += ("--no-single-branch", )
-        subprocess.run([
+        git_clone_cmd = [
             "git", "clone", *extra_args,
             "https://github.com/llvm/llvm-project", llvm_folder
-        ],
-                       check=True)
+        ]
+        subprocess.run(git_clone_cmd, check=True)
         subprocess.run(["git", "checkout", ref], check=True, cwd=llvm_folder)
-
-    # One might wonder why we are downloading binutils in an LLVM build script :)
-    # We need it for the LLVMgold plugin, which can be used for LTO with ld.gold,
-    # which at the time of writing this, is how the Google Pixel 3 kernel is built
-    # and linked.
-    utils.download_binutils(root_folder)
 
 
 def cleanup(build_folder, incremental):
@@ -707,10 +717,9 @@ def get_final_stage(args):
     """
     if args.build_stage1_only:
         return 1
-    elif args.pgo:
+    if args.pgo:
         return 3
-    else:
-        return 2
+    return 2
 
 
 def should_install_toolchain(args, stage):
@@ -956,6 +965,11 @@ def project_cmake_defines(args, stage):
         # We don't need the sanitizers for the stage 1 bootstrap
         if bootstrap_stage(args, stage):
             defines['COMPILER_RT_BUILD_SANITIZERS'] = 'OFF'
+        # execinfo.h might not exist (Alpine Linux) but the GWP ASAN library
+        # depends on it. Disable the option to avoid breaking the build, the
+        # kernel does not depend on it.
+        if not pathlib.Path('/usr/include/execinfo.h').exists():
+            defines['COMPILER_RT_BUILD_GWP_ASAN'] = 'OFF'
 
     return defines
 
@@ -1061,13 +1075,8 @@ def stage_specific_cmake_defines(args, dirs, stage):
         # are taken into account by cmake)
         keys = ['CMAKE_C_FLAGS', 'CMAKE_CXX_FLAGS']
         for key in keys:
-            if not key in str(args.defines):
+            if key not in str(args.defines):
                 defines[key] = ''
-
-        # For LLVMgold.so, which is used for LTO with ld.gold
-        defines['LLVM_BINUTILS_INCDIR'] = dirs.root_folder.joinpath(
-            utils.current_binutils(), "include")
-        defines['LLVM_ENABLE_PLUGINS'] = 'ON'
 
     return defines
 
@@ -1142,13 +1151,16 @@ def invoke_cmake(args, dirs, env_vars, stage):
     """
     # Add the defines, point them to our build folder, and invoke cmake
     cmake = ['cmake', '-G', 'Ninja', '-Wno-dev']
+
+    # Report only warnings and errors if running quietly.
+    if args.quiet_cmake:
+        cmake += ['--log-level=NOTICE']
+
     defines = build_cmake_defines(args, dirs, env_vars, stage)
-    for key in defines:
-        newdef = f'-D{key}={defines[key]}'
-        cmake += [newdef]
+    cmake += [f'-D{key}={val}' for key, val in defines.items()]
     if args.defines:
-        for d in args.defines:
-            cmake += [f'-D{d}']
+        cmake += [f'-D{d}' for d in args.defines]
+
     cmake += [dirs.llvm_folder.joinpath("llvm")]
 
     header_string, sub_folder = get_pgo_header_folder(stage)
@@ -1194,9 +1206,11 @@ def ninja_check(args, build_folder):
     :return:
     """
     if args.check_targets:
-        ninja_check = ['ninja'] + [f'check-{s}' for s in args.check_targets]
-        show_command(args, ninja_check)
-        subprocess.run(ninja_check, check=True, cwd=build_folder)
+        # yapf really messes the look of this up so split it into two assignments.
+        ninja_check_cmd = ['ninja']
+        ninja_check_cmd += [f'check-{s}' for s in args.check_targets]
+        show_command(args, ninja_check_cmd)
+        subprocess.run(ninja_check_cmd, check=True, cwd=build_folder)
 
 
 def invoke_ninja(args, dirs, stage):
@@ -1218,8 +1232,6 @@ def invoke_ninja(args, dirs, stage):
         install_folder = dirs.install_folder
     elif stage == 1 and args.build_stage1_only and not args.install_stage1_only:
         install_folder = build_folder
-
-    build_folder = build_folder
 
     time_started = time.time()
 
@@ -1378,12 +1390,12 @@ def generate_pgo_profiles(args, dirs):
             pgo_llvm_build(args, dirs)
 
     # Combine profiles
-    subprocess.run([
+    llvm_prof_data_cmd = [
         dirs.build_folder.joinpath("stage1", "bin", "llvm-profdata"), "merge",
         f'-output={dirs.build_folder.joinpath("profdata.prof")}'
     ] + list(
-        dirs.build_folder.joinpath("stage2", "profiles").glob("*.profraw")),
-                   check=True)
+        dirs.build_folder.joinpath("stage2", "profiles").glob("*.profraw"))
+    subprocess.run(llvm_prof_data_cmd, check=True)
 
 
 def do_multistage_build(args, dirs, env_vars):
@@ -1412,14 +1424,15 @@ def can_use_perf():
     # Make sure perf is in the environment
     if shutil.which("perf"):
         try:
-            subprocess.run([
+            perf_cmd = [
                 "perf", "record", "--branch-filter", "any,u", "--event",
                 "cycles:u", "--output", "/dev/null", "--", "sleep", "1"
-            ],
+            ]
+            subprocess.run(perf_cmd,
                            stderr=subprocess.DEVNULL,
                            stdout=subprocess.DEVNULL,
                            check=True)
-        except:
+        except subprocess.CalledProcessError:
             pass
         else:
             return True
@@ -1482,8 +1495,8 @@ def do_bolt(args, dirs):
         # the output to a log file in case it ever needs to be inspected
         merge_fdata_log = dirs.build_folder.joinpath("merge-fdata.log")
 
-        with open(bolt_profile, "w") as out_f, open(merge_fdata_log,
-                                                    "w") as err_f:
+        with open(bolt_profile, "w", encoding='utf-8') as out_f, \
+             open(merge_fdata_log, "w", encoding='utf-8') as err_f:
             # We don't use show_command() here because of how long the command
             # will be.
             print("Merging .fdata files, this might take a while...",
@@ -1539,32 +1552,23 @@ def main():
 
     args = parse_parameters(root_folder)
 
-    build_folder = pathlib.Path(args.build_folder)
-    if not build_folder.is_absolute():
-        build_folder = root_folder.joinpath(build_folder)
-
-    install_folder = pathlib.Path(args.install_folder)
-    if not install_folder.is_absolute():
-        install_folder = root_folder.joinpath(install_folder)
+    build_folder = pathlib.Path(args.build_folder).resolve()
+    install_folder = pathlib.Path(args.install_folder).resolve()
 
     linux_folder = None
     if args.linux_folder:
-        linux_folder = pathlib.Path(args.linux_folder)
-        if not linux_folder.is_absolute():
-            linux_folder = root_folder.joinpath(linux_folder)
+        linux_folder = pathlib.Path(args.linux_folder).resolve()
         if not linux_folder.exists():
             utils.print_error(
                 f"\nSupplied kernel source ({linux_folder}) does not exist!")
-            exit(1)
+            sys.exit(1)
 
     if args.llvm_folder:
-        llvm_folder = pathlib.Path(args.llvm_folder)
-        if not llvm_folder.is_absolute():
-            llvm_folder = root_folder.joinpath(llvm_folder)
+        llvm_folder = pathlib.Path(args.llvm_folder).resolve()
         if not llvm_folder.exists():
             utils.print_error(
                 f"\nSupplied LLVM source ({llvm_folder}) does not exist!")
-            exit(1)
+            sys.exit(1)
     else:
         llvm_folder = root_folder.joinpath("llvm-project")
 
@@ -1611,8 +1615,7 @@ def main():
         ref = args.branch
 
     if not args.llvm_folder:
-        fetch_llvm_binutils(root_folder, llvm_folder, not args.no_update,
-                            args.shallow_clone, ref)
+        fetch_llvm(llvm_folder, not args.no_update, args.shallow_clone, ref)
     cleanup(build_folder, args.incremental)
     dirs = Directories(build_folder, install_folder, linux_folder, llvm_folder,
                        root_folder)

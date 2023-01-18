@@ -1,13 +1,82 @@
 #!/usr/bin/env python3
+# pylint: disable=invalid-name
 # Description: Builds a standalone copy of binutils
 
 import argparse
+import hashlib
 import multiprocessing
 import pathlib
 import platform
+import re
 import shutil
 import subprocess
 import utils
+
+
+def current_binutils():
+    """
+    Simple getter for current stable binutils release
+    :return: The current stable release of binutils
+    """
+    return "binutils-2.40"
+
+
+def download_binutils(folder):
+    """
+    Downloads the latest stable version of binutils
+    :param folder: Directory to download binutils to
+    """
+    binutils = current_binutils()
+    binutils_folder = folder.joinpath(binutils)
+    if not binutils_folder.is_dir():
+        # Remove any previous copies of binutils
+        for entity in folder.glob('binutils-*'):
+            if entity.is_dir():
+                shutil.rmtree(entity)
+            else:
+                entity.unlink()
+
+        # Download the tarball
+        binutils_tarball = folder.joinpath(binutils + ".tar.xz")
+        curl_cmd = [
+            "curl", "-LSs", "-o", binutils_tarball,
+            f"https://sourceware.org/pub/binutils/releases/{binutils_tarball.name}"
+        ]
+        subprocess.run(curl_cmd, check=True)
+        verify_binutils_checksum(binutils_tarball)
+        # Extract the tarball then remove it
+        subprocess.run(["tar", "-xJf", binutils_tarball.name],
+                       check=True,
+                       cwd=folder)
+        utils.create_gitignore(binutils_folder)
+        binutils_tarball.unlink()
+
+
+def verify_binutils_checksum(file_to_check):
+    # Check the SHA512 checksum of the downloaded file with a known good one
+    file_hash = hashlib.sha512()
+    with file_to_check.open("rb") as file:
+        while True:
+            data = file.read(131072)
+            if not data:
+                break
+            file_hash.update(data)
+    # Get good hash from file
+    curl_cmd = [
+        'curl', '-fLSs',
+        'https://sourceware.org/pub/binutils/releases/sha512.sum'
+    ]
+    sha512_sums = subprocess.run(curl_cmd,
+                                 capture_output=True,
+                                 check=True,
+                                 text=True).stdout
+    line_match = fr"([0-9a-f]+)\s+{file_to_check.name}$"
+    if not (match := re.search(line_match, sha512_sums, flags=re.M)):
+        raise RuntimeError(
+            "Could not find binutils hash in sha512.sum output?")
+    if file_hash.hexdigest() != match.groups()[0]:
+        raise RuntimeError(
+            "binutils: SHA512 checksum does not match known good one!")
 
 
 def host_arch_target():
@@ -129,7 +198,7 @@ def create_targets(targets):
     for target in targets:
         if target == "all":
             return list(targets_dict.values())
-        elif target == "host":
+        if target == "host":
             key = host_arch_target()
         else:
             key = target_arch(target)
@@ -159,12 +228,20 @@ def invoke_configure(binutils_folder, build_folder, install_folder, target,
     :param host_arch: Host architecture to optimize for
     """
     configure = [
-        binutils_folder.joinpath("configure"), 'CC=gcc', 'CXX=g++',
-        '--disable-compressed-debug-sections', '--disable-gdb',
-        '--disable-werror', '--enable-deterministic-archives',
-        '--enable-new-dtags', '--enable-plugins', '--enable-threads',
-        '--quiet', '--with-system-zlib'
-    ]
+        binutils_folder.joinpath("configure"),
+        'CC=gcc',
+        'CXX=g++',
+        '--disable-compressed-debug-sections',
+        '--disable-gdb',
+        '--disable-nls',
+        '--disable-werror',
+        '--enable-deterministic-archives',
+        '--enable-new-dtags',
+        '--enable-plugins',
+        '--enable-threads',
+        '--quiet',
+        '--with-system-zlib',
+    ]  # yapf: disable
     if install_folder:
         configure += [f'--prefix={install_folder}']
     if host_arch:
@@ -174,27 +251,42 @@ def invoke_configure(binutils_folder, build_folder, install_folder, target,
         ]
     else:
         configure += ['CFLAGS=-O2', 'CXXFLAGS=-O2']
+    # gprofng uses glibc APIs that might not be available on musl
+    if utils.libc_is_musl():
+        configure += ['--disable-gprofng']
 
     configure_arch_flags = {
         "arm-linux-gnueabi": [
-            '--disable-multilib', '--disable-nls', '--with-gnu-as',
-            '--with-gnu-ld'
+            '--disable-multilib',
+            '--with-gnu-as',
+            '--with-gnu-ld',
         ],
-        "powerpc-linux-gnu":
-        ['--disable-sim', '--enable-lto', '--enable-relro', '--with-pic'],
-    }
-    configure_arch_flags['aarch64-linux-gnu'] = configure_arch_flags[
-        'arm-linux-gnueabi'] + ['--enable-gold', '--enable-ld=default']
+        "powerpc-linux-gnu": [
+            '--disable-sim',
+            '--enable-lto',
+            '--enable-relro',
+            '--with-pic',
+        ],
+    }  # yapf: disable
+    configure_arch_flags['aarch64-linux-gnu'] = [
+        *configure_arch_flags['arm-linux-gnueabi'],
+        '--enable-gold',
+        '--enable-ld=default',
+    ]
     configure_arch_flags['powerpc64-linux-gnu'] = configure_arch_flags[
         'powerpc-linux-gnu']
     configure_arch_flags['powerpc64le-linux-gnu'] = configure_arch_flags[
         'powerpc-linux-gnu']
     configure_arch_flags['riscv64-linux-gnu'] = configure_arch_flags[
         'powerpc-linux-gnu']
-    configure_arch_flags['s390x-linux-gnu'] = configure_arch_flags[
-        'powerpc-linux-gnu'] + ['--enable-targets=s390-linux-gnu']
-    configure_arch_flags['x86_64-linux-gnu'] = configure_arch_flags[
-        'powerpc-linux-gnu'] + ['--enable-targets=x86_64-pep']
+    configure_arch_flags['s390x-linux-gnu'] = [
+        *configure_arch_flags['powerpc-linux-gnu'],
+        '--enable-targets=s390-linux-gnu',
+    ]
+    configure_arch_flags['x86_64-linux-gnu'] = [
+        *configure_arch_flags['powerpc-linux-gnu'],
+        '--enable-targets=x86_64-pep',
+    ]
 
     for endian in ["", "el"]:
         configure_arch_flags[f'mips{endian}-linux-gnu'] = [
@@ -255,23 +347,17 @@ def main():
     args = parse_parameters(root_folder)
 
     if args.binutils_folder:
-        binutils_folder = pathlib.Path(args.binutils_folder)
-        if not binutils_folder.is_absolute():
-            binutils_folder = root_folder.joinpath(binutils_folder)
+        binutils_folder = pathlib.Path(args.binutils_folder).resolve()
     else:
-        binutils_folder = root_folder.joinpath(utils.current_binutils())
-        utils.download_binutils(root_folder)
+        binutils_folder = root_folder.joinpath(current_binutils())
+        download_binutils(root_folder)
 
-    build_folder = pathlib.Path(args.build_folder)
-    if not build_folder.is_absolute():
-        build_folder = root_folder.joinpath(build_folder)
+    build_folder = pathlib.Path(args.build_folder).resolve()
 
     if args.skip_install:
         install_folder = None
     else:
-        install_folder = pathlib.Path(args.install_folder)
-        if not install_folder.is_absolute():
-            install_folder = root_folder.joinpath(install_folder)
+        install_folder = pathlib.Path(args.install_folder).resolve()
 
     targets = ["all"]
     if args.targets is not None:

@@ -22,7 +22,7 @@ builder_commit="$(git rev-parse HEAD)"
 # Build LLVM
 msg "Building LLVM..."
 ./build-llvm.py \
-	--clang-vendor "z3zhain" \
+	--vendor-string "z3zhain" \
 	--projects "clang;compiler-rt;polly" \
 	--no-update \
 	--targets "ARM;AArch64;X86"

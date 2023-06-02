@@ -25,7 +25,7 @@ msg "Building LLVM..."
 	--vendor-string "z3zhain" \
 	--projects "clang;compiler-rt;polly" \
 	--no-update \
-	--targets "ARM;AArch64;X86"
+	--targets ARM AArch64 X86
 
 # Build binutils
 msg "Building binutils..."

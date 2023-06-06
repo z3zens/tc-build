@@ -8,7 +8,7 @@ task:
   name: "Clang-Build"
   timeout_in: 120m
   container:
-      image: xyzuan/xdocker:latest
+      image: z3zens/ubuntu:20230607
       cpu: 8
       memory: 32G
 

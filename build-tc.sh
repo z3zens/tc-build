@@ -71,8 +71,8 @@ clang_version="$(install/bin/clang --version | head -n1 | cut -d' ' -f4)"
 echo "Push to gitlab..."
 git config --global user.name "z3zens"
 git config --global user.email "ramaadhananggay@gmail.com"
-git clone "https://z3zens:$GL_TOKEN@gitlab.com/z3zens/wurtzite-toolchains.git" rel_repo
-cd rel_repo && git reset 5bd62b36737fa306d21b1771676275d0c3f628eb --hard
+git clone "https://z3zens:$GL_TOKEN@gitlab.com/z3zens/clang-toolchains.git" rel_repo
+cd rel_repo
 cd $DIR
 pushd rel_repo || exit
 rm -fr ./*

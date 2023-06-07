@@ -23,7 +23,6 @@ builder_commit="$(git rev-parse HEAD)"
 msg "Building LLVM..."
 ./build-llvm.py \
 	--defines LLVM_PARALLEL_COMPILE_JOBS=$(nproc) LLVM_PARALLEL_LINK_JOBS=$(nproc) CMAKE_C_FLAGS=-O3 CMAKE_CXX_FLAGS=-O3 \
-	--incremental \
 	--no-update \
 	--projects "clang;compiler-rt;polly" \
 	--shallow-clone \

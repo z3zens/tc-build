@@ -5,10 +5,10 @@ env:
     CIRRUS_SHELL: bash
 
 task:
-  name: "Clang-Build"
+  name: "LLVM-Build"
   timeout_in: 120m
   container:
-      image: z3zens/ubuntu:20230608
+      image: z3zens/ubuntu:llvm
       cpu: 8
       memory: 32G
 

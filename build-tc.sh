@@ -21,17 +21,17 @@ builder_commit="$(git rev-parse HEAD)"
 
 # Build LLVM
 msg "Building LLVM..."
-./build-llvm.py \
-	--defines LLVM_PARALLEL_COMPILE_JOBS=$(nproc) LLVM_PARALLEL_LINK_JOBS=$(nproc) CMAKE_C_FLAGS=-O3 CMAKE_CXX_FLAGS=-O3 \
+CC=clang CFLAGS= CXX=clang++ CXXFLAGS= ./build-llvm.py \
 	--no-update \
 	--projects "clang;compiler-rt;polly" \
-	--shallow-clone \
 	--targets ARM AArch64 X86 \
+	--shallow-clone \
 	--vendor-string "z3zhain"
 
 # Build binutils
 msg "Building binutils..."
-./build-binutils.py --targets arm aarch64 x86_64
+./build-binutils.py \
+	--targets arm aarch64 x86_64
 
 # Remove unused products
 echo "Removing unused products..."
